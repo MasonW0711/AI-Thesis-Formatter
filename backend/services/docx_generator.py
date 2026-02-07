@@ -2,12 +2,20 @@
 論文格式調整系統 - Word 文件生成服務
 """
 from docx import Document as DocxDocument
-from docx.shared import Pt, Cm, Inches
+from docx.shared import Pt, Cm
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from typing import List, Dict, Any, Optional
-import os
 
 from services.format_analyzer import LearnedFormatRules, ElementType
+
+
+def clamp_number(value: Any, low: float, high: float, default: float) -> float:
+    """數值夾限，避免極端值導致文件生成失敗"""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, numeric))
 
 
 def set_chinese_font(run, font_name: str):
@@ -40,10 +48,10 @@ class DocxGenerator:
         
         # 設定邊距
         if self.learned_rules:
-            section.top_margin = Pt(self.learned_rules.margin_top)
-            section.bottom_margin = Pt(self.learned_rules.margin_bottom)
-            section.left_margin = Pt(self.learned_rules.margin_left)
-            section.right_margin = Pt(self.learned_rules.margin_right)
+            section.top_margin = Pt(clamp_number(self.learned_rules.margin_top, 0.0, 252.0, 72.0))
+            section.bottom_margin = Pt(clamp_number(self.learned_rules.margin_bottom, 0.0, 252.0, 72.0))
+            section.left_margin = Pt(clamp_number(self.learned_rules.margin_left, 0.0, 252.0, 72.0))
+            section.right_margin = Pt(clamp_number(self.learned_rules.margin_right, 0.0, 252.0, 72.0))
         else:
             section.top_margin = Cm(2.5)
             section.bottom_margin = Cm(2.5)
@@ -83,17 +91,17 @@ class DocxGenerator:
             
             # 根據元素類型設定格式
             if element_type == ElementType.TITLE:
-                run.font.size = Pt(self.learned_rules.title_font_size if self.learned_rules else 18)
+                run.font.size = Pt(clamp_number(self.learned_rules.title_font_size if self.learned_rules else 18, 10.0, 36.0, 18.0))
                 run.font.bold = True
                 para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 
             elif element_type == ElementType.CHAPTER:
-                run.font.size = Pt(self.learned_rules.chapter_font_size if self.learned_rules else 16)
+                run.font.size = Pt(clamp_number(self.learned_rules.chapter_font_size if self.learned_rules else 16, 10.0, 30.0, 16.0))
                 run.font.bold = True
                 para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
                 
             elif element_type == ElementType.SECTION:
-                run.font.size = Pt(self.learned_rules.section_font_size if self.learned_rules else 14)
+                run.font.size = Pt(clamp_number(self.learned_rules.section_font_size if self.learned_rules else 14, 10.0, 24.0, 14.0))
                 run.font.bold = True
                 
             elif element_type == ElementType.SUBSECTION:
@@ -101,18 +109,18 @@ class DocxGenerator:
                 run.font.bold = True
                 
             else:  # PARAGRAPH
-                run.font.size = Pt(self.learned_rules.paragraph_font_size if self.learned_rules else 12)
+                run.font.size = Pt(clamp_number(self.learned_rules.paragraph_font_size if self.learned_rules else 12, 8.0, 24.0, 12.0))
                 para.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
                 
                 # 設定首行縮排
                 if self.learned_rules and self.learned_rules.first_line_indent > 0:
-                    para.paragraph_format.first_line_indent = Pt(self.learned_rules.first_line_indent)
+                    para.paragraph_format.first_line_indent = Pt(clamp_number(self.learned_rules.first_line_indent, 0.0, 72.0, 24.0))
                 else:
                     para.paragraph_format.first_line_indent = Cm(0.85)
                 
                 # 設定行距
                 if self.learned_rules:
-                    para.paragraph_format.line_spacing = self.learned_rules.line_spacing
+                    para.paragraph_format.line_spacing = clamp_number(self.learned_rules.line_spacing, 1.0, 3.0, 1.5)
                 else:
                     para.paragraph_format.line_spacing = 1.5
         
@@ -129,10 +137,10 @@ class DocxGenerator:
         # 設定頁面邊距
         for section in source_doc.sections:
             if self.learned_rules:
-                section.top_margin = Pt(self.learned_rules.margin_top)
-                section.bottom_margin = Pt(self.learned_rules.margin_bottom)
-                section.left_margin = Pt(self.learned_rules.margin_left)
-                section.right_margin = Pt(self.learned_rules.margin_right)
+                section.top_margin = Pt(clamp_number(self.learned_rules.margin_top, 0.0, 252.0, 72.0))
+                section.bottom_margin = Pt(clamp_number(self.learned_rules.margin_bottom, 0.0, 252.0, 72.0))
+                section.left_margin = Pt(clamp_number(self.learned_rules.margin_left, 0.0, 252.0, 72.0))
+                section.right_margin = Pt(clamp_number(self.learned_rules.margin_right, 0.0, 252.0, 72.0))
         
         # 處理每個段落
         for para in source_doc.paragraphs:
@@ -149,24 +157,24 @@ class DocxGenerator:
                 
                 # 設定字型大小
                 if is_title:
-                    run.font.size = Pt(self.learned_rules.title_font_size if self.learned_rules else 18)
+                    run.font.size = Pt(clamp_number(self.learned_rules.title_font_size if self.learned_rules else 18, 10.0, 36.0, 18.0))
                     run.font.bold = True
                 elif is_heading:
-                    run.font.size = Pt(self.learned_rules.chapter_font_size if self.learned_rules else 14)
+                    run.font.size = Pt(clamp_number(self.learned_rules.chapter_font_size if self.learned_rules else 14, 10.0, 30.0, 14.0))
                     run.font.bold = True
                 else:
-                    run.font.size = Pt(self.learned_rules.paragraph_font_size if self.learned_rules else 12)
+                    run.font.size = Pt(clamp_number(self.learned_rules.paragraph_font_size if self.learned_rules else 12, 8.0, 24.0, 12.0))
             
             # 設定段落格式
             if not is_title and not is_heading:
                 para.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
                 if self.learned_rules and self.learned_rules.first_line_indent > 0:
-                    para.paragraph_format.first_line_indent = Pt(self.learned_rules.first_line_indent)
+                    para.paragraph_format.first_line_indent = Pt(clamp_number(self.learned_rules.first_line_indent, 0.0, 72.0, 24.0))
                 else:
                     para.paragraph_format.first_line_indent = Cm(0.85)
                 
                 if self.learned_rules:
-                    para.paragraph_format.line_spacing = self.learned_rules.line_spacing
+                    para.paragraph_format.line_spacing = clamp_number(self.learned_rules.line_spacing, 1.0, 3.0, 1.5)
         
         source_doc.save(self.output_path)
         return self.output_path

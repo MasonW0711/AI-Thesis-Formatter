@@ -80,7 +80,38 @@ class LearnedFormatRules:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "LearnedFormatRules":
         """從字典建立"""
-        return cls(**{k: v for k, v in data.items() if hasattr(cls, k)})
+        rules = cls(**{k: v for k, v in data.items() if hasattr(cls, k)})
+        rules._sanitize()
+        return rules
+
+    def _sanitize(self):
+        """清理極端值，避免後續套用格式時失敗"""
+        def clamp(value: Any, low: float, high: float, default: float) -> float:
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return default
+            return max(low, min(high, numeric))
+
+        page_width = clamp(self.page_width, 420.0, 1190.0, 595.276)
+        page_height = clamp(self.page_height, 595.0, 1684.0, 841.89)
+        self.page_width = page_width
+        self.page_height = page_height
+
+        max_margin_x = max(36.0, page_width * 0.45)
+        max_margin_y = max(36.0, page_height * 0.30)
+
+        self.margin_left = clamp(self.margin_left, 0.0, max_margin_x, 72.0)
+        self.margin_right = clamp(self.margin_right, 0.0, max_margin_x, 72.0)
+        self.margin_top = clamp(self.margin_top, 0.0, max_margin_y, 72.0)
+        self.margin_bottom = clamp(self.margin_bottom, 0.0, max_margin_y, 72.0)
+        self.first_line_indent = clamp(self.first_line_indent, 0.0, 72.0, 24.0)
+        self.line_spacing = clamp(self.line_spacing, 1.0, 3.0, 1.5)
+        self.main_font_size = clamp(self.main_font_size, 8.0, 24.0, 12.0)
+        self.paragraph_font_size = clamp(self.paragraph_font_size, 8.0, 24.0, self.main_font_size)
+        self.title_font_size = clamp(self.title_font_size, 10.0, 36.0, 18.0)
+        self.chapter_font_size = clamp(self.chapter_font_size, 10.0, 30.0, 16.0)
+        self.section_font_size = clamp(self.section_font_size, 10.0, 24.0, 14.0)
 
 
 @dataclass
@@ -228,9 +259,13 @@ class FormatAnalyzer:
                 
                 # 收集位置資訊以推算邊距
                 if block.bbox:
-                    all_left_positions.append(block.bbox[0])
-                    all_right_positions.append(block.bbox[2])
-                    all_top_positions.append(block.bbox[1])
+                    x0, y0, x1, _ = block.bbox
+                    if 0 <= x0 <= page.width:
+                        all_left_positions.append(x0)
+                    if 0 <= x1 <= page.width:
+                        all_right_positions.append(x1)
+                    if 0 <= y0 <= page.height:
+                        all_top_positions.append(y0)
                 
                 # 識別大字型（可能是標題）
                 if block.font_size > 14:
@@ -248,11 +283,15 @@ class FormatAnalyzer:
         
         # 推算邊距
         if all_left_positions:
-            rules.margin_left = min(all_left_positions)
+            sorted_left = sorted(all_left_positions)
+            rules.margin_left = sorted_left[max(0, int((len(sorted_left) - 1) * 0.05))]
         if all_right_positions and rules.page_width:
-            rules.margin_right = rules.page_width - max(all_right_positions)
+            sorted_right = sorted(all_right_positions)
+            right_edge = sorted_right[min(len(sorted_right) - 1, int((len(sorted_right) - 1) * 0.95))]
+            rules.margin_right = rules.page_width - right_edge
         if all_top_positions:
-            rules.margin_top = min(all_top_positions)
+            sorted_top = sorted(all_top_positions)
+            rules.margin_top = sorted_top[max(0, int((len(sorted_top) - 1) * 0.05))]
         
         # 分析標題格式
         if large_font_sizes:
@@ -273,6 +312,8 @@ class FormatAnalyzer:
             indent_offsets = [pos - rules.margin_left for pos in all_left_positions if pos > rules.margin_left + 10]
             if indent_offsets:
                 rules.first_line_indent = statistics.mode(indent_offsets) if indent_offsets else 24
+        
+        rules._sanitize()
         
         return rules
     

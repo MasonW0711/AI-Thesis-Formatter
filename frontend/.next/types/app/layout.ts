@@ -1,4 +1,4 @@
-// File: /Users/wangchunhao/github/論文格式調整/frontend/app/layout.tsx
+// File: /Users/wangchunhao/github /AI-Thesis-Formatter/frontend/app/layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -220,8 +220,9 @@ export default function UploadPage() {
                     width: '32px',
                     height: '32px',
                     borderRadius: '50%',
-                    background: currentStep === 'template' ? 'var(--gradient-primary)' :
-                        (currentStep !== 'template' ? 'var(--success-500)' : 'var(--gray-300)'),
+                    background: currentStep === 'template'
+                        ? 'var(--gradient-primary)'
+                        : 'var(--success-500)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
