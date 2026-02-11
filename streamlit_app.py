@@ -111,9 +111,10 @@ def ensure_state_keys() -> None:
     st.session_state.setdefault("rules_state", None)
     st.session_state.setdefault("last_job_result", None)
     st.session_state.setdefault("ai_provider", secret_provider or settings.ai_provider or "auto")
-    st.session_state.setdefault("openai_api_key", _read_streamlit_secret("OPENAI_API_KEY") or settings.openai_api_key)
+    # UI 不預填 API Key，避免金鑰在介面上成為預設值。
+    st.session_state.setdefault("openai_api_key", "")
     st.session_state.setdefault("openai_model", secret_openai_model or settings.openai_model)
-    st.session_state.setdefault("gemini_api_key", _read_streamlit_secret("GEMINI_API_KEY") or settings.gemini_api_key)
+    st.session_state.setdefault("gemini_api_key", "")
     st.session_state.setdefault("gemini_model", secret_gemini_model or settings.gemini_model)
     if st.session_state["ai_provider"] not in {"auto", "openai", "gemini", "off"}:
         st.session_state["ai_provider"] = "auto"
@@ -218,11 +219,16 @@ def render_group_editor(rules_state: dict) -> None:
 
 
 def build_ai_options_from_state() -> dict[str, str]:
+    openai_key_manual = str(st.session_state.get("openai_api_key", "")).strip()
+    gemini_key_manual = str(st.session_state.get("gemini_api_key", "")).strip()
+    openai_key_secret = _read_streamlit_secret("OPENAI_API_KEY")
+    gemini_key_secret = _read_streamlit_secret("GEMINI_API_KEY")
+
     return {
         "provider": str(st.session_state.get("ai_provider", "auto")),
-        "openai_api_key": str(st.session_state.get("openai_api_key", "")).strip(),
+        "openai_api_key": openai_key_manual or openai_key_secret,
         "openai_model": str(st.session_state.get("openai_model", settings.openai_model)).strip(),
-        "gemini_api_key": str(st.session_state.get("gemini_api_key", "")).strip(),
+        "gemini_api_key": gemini_key_manual or gemini_key_secret,
         "gemini_model": str(st.session_state.get("gemini_model", settings.gemini_model)).strip(),
     }
 
@@ -230,6 +236,7 @@ def build_ai_options_from_state() -> dict[str, str]:
 def render_ai_settings() -> None:
     st.header("步驟 3：AI 內容判斷設定")
     st.caption("可導入 OpenAI 或 Gemini，強化段落語義判斷（標題/內文/前置頁分類）。")
+    st.caption("若欄位留白，系統會自動使用 Streamlit Secrets 內的 API Key。")
 
     provider_options = ["auto", "openai", "gemini", "off"]
     current_provider = str(st.session_state.get("ai_provider", "auto"))

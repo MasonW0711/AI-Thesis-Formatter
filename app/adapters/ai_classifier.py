@@ -27,7 +27,7 @@ class AIProviderConfig:
 
 
 class ParagraphAIClassifier:
-    """使用外部 LLM 服務判斷段落語意群組（標題、內文等）。"""
+    """Use OpenAI/Gemini to classify paragraph semantic groups."""
 
     def __init__(self, config: AIProviderConfig) -> None:
         self.config = config
@@ -98,7 +98,9 @@ class ParagraphAIClassifier:
                     if isinstance(idx, int) and group in GROUP_KEYS:
                         labels[idx] = group
             except Exception as exc:  # pragma: no cover - network defensive branch
-                notes.append(f"AI 分類失敗，已回退規則判斷：{exc}")
+                provider_name = self._provider_display(provider)
+                reason = self._friendly_error_message(provider_name, exc)
+                notes.append(f"AI 分類失敗，已回退規則判斷：{reason}")
                 return {}, notes
 
         if labels:
@@ -247,6 +249,28 @@ class ParagraphAIClassifier:
                 continue
 
         raise ValueError("AI 回覆不是有效 JSON。")
+
+    @staticmethod
+    def _friendly_error_message(provider_name: str, exc: Exception) -> str:
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            if status in {401, 403}:
+                return (
+                    f"{provider_name} 驗證或權限失敗（HTTP {status}）。"
+                    "請確認 API Key 是否有效、模型是否有權限、帳號計費是否啟用。"
+                )
+            if status == 429:
+                return f"{provider_name} 已達速率或額度限制（HTTP 429），請稍後再試。"
+            if status >= 500:
+                return f"{provider_name} 服務暫時異常（HTTP {status}），請稍後重試。"
+            return f"{provider_name} API 呼叫失敗（HTTP {status}）。"
+
+        if isinstance(exc, httpx.TimeoutException):
+            return f"{provider_name} 請求逾時，請確認網路或調整模型後重試。"
+        if isinstance(exc, httpx.HTTPError):
+            return f"{provider_name} 網路連線失敗，請確認網路與憑證設定。"
+
+        return str(exc)
 
     @staticmethod
     def _chunk(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:

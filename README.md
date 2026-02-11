@@ -70,6 +70,7 @@ streamlit run streamlit_app.py
 
 - Streamlit 頁面「步驟 3：AI 內容判斷設定」可切換 `auto / OpenAI / Gemini / 關閉 AI`
 - 可在 UI 臨時輸入 API Key（遮罩欄位）與模型名稱
+- UI 不會預填 API Key；若留白則自動讀取 Streamlit Secrets
 - 若未提供可用 API Key，系統會自動回退到規則分類，不會中斷任務
 
 ## 測試
