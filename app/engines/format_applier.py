@@ -83,10 +83,24 @@ class FormatApplier:
         rows: list[dict[str, Any]] = []
         ai_inputs: list[dict[str, Any]] = []
 
+        paragraph_rows: list[dict[str, Any]] = []
         for idx, paragraph in enumerate(document.paragraphs):
             text = paragraph.text.strip()
             if not text:
                 continue
+
+            paragraph_rows.append(
+                {
+                    "index": idx,
+                    "paragraph": paragraph,
+                    "text": text,
+                }
+            )
+
+        for pos, item in enumerate(paragraph_rows):
+            idx = item["index"]
+            paragraph = item["paragraph"]
+            text = item["text"]
 
             heuristic_group = self._classify(idx, text, paragraph)
             locked_group = self._locked_group(text)
@@ -102,10 +116,14 @@ class FormatApplier:
             rows.append(row)
 
             if not locked_group:
+                prev_text = paragraph_rows[pos - 1]["text"] if pos > 0 else ""
+                next_text = paragraph_rows[pos + 1]["text"] if pos + 1 < len(paragraph_rows) else ""
                 ai_inputs.append(
                     {
                         "index": idx,
                         "text": text,
+                        "prev_text": prev_text[:120],
+                        "next_text": next_text[:120],
                         "heuristic": heuristic_group,
                         "style_name": (paragraph.style.name if paragraph.style else "") or "",
                         "alignment": self._alignment_key(paragraph.alignment),

@@ -14,6 +14,9 @@ if str(ROOT) not in sys.path:
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="thesis_formatter_tests_"))
 os.environ["THESIS_APP_DATA_DIR"] = str(TEST_ROOT / "data")
 os.environ["THESIS_APP_DEBUG"] = "true"
+os.environ["THESIS_AI_PROVIDER"] = "off"
+os.environ.pop("OPENAI_API_KEY", None)
+os.environ.pop("GEMINI_API_KEY", None)
 
 
 @pytest.fixture(scope="session")

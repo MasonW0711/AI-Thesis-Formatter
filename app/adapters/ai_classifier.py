@@ -78,9 +78,12 @@ class ParagraphAIClassifier:
         )
 
     def classify(self, paragraphs: list[dict[str, Any]]) -> tuple[dict[int, str], list[str]]:
-        provider = self._resolve_provider()
-        if not provider or not paragraphs:
+        if not paragraphs:
             return {}, []
+
+        provider = self._resolve_provider()
+        if not provider:
+            return {}, [self._disabled_reason_note()]
 
         labels: dict[int, str] = {}
         notes: list[str] = []
@@ -92,19 +95,25 @@ class ParagraphAIClassifier:
                 else:
                     raw_text = self._call_gemini(system_prompt, user_prompt)
 
-                for item in self._parse_labels(raw_text):
-                    idx = item.get("index")
-                    group = item.get("group")
-                    if isinstance(idx, int) and group in GROUP_KEYS:
-                        labels[idx] = group
+                batch_labels = self._collect_valid_labels(raw_text)
+                labels.update(batch_labels)
+
+                expected_indices = {int(item["index"]) for item in batch if isinstance(item.get("index"), int)}
+                missing_indices = expected_indices - set(batch_labels.keys())
+                if missing_indices:
+                    retry_labels = self._retry_missing_labels(provider, batch, sorted(missing_indices))
+                    labels.update(retry_labels)
+                    missing_indices = expected_indices - set(labels.keys())
+                    if missing_indices:
+                        notes.append(f"AI 未完整回傳分類，{len(missing_indices)} 段改用規則判斷。")
             except Exception as exc:  # pragma: no cover - network defensive branch
                 provider_name = self._provider_display(provider)
                 reason = self._friendly_error_message(provider_name, exc)
                 notes.append(f"AI 分類失敗，已回退規則判斷：{reason}")
                 return {}, notes
 
-        if labels:
-            notes.append(f"已啟用 AI 語義判斷（{self._provider_display(provider)}）。")
+        notes.append(f"已啟用 AI 語義判斷（{self._provider_display(provider)}）。")
+        notes.append(f"AI 判讀完成 {len(labels)}/{len(paragraphs)} 段。")
         return labels, notes
 
     def _resolve_provider(self) -> str | None:
@@ -125,11 +134,13 @@ class ParagraphAIClassifier:
 
     def _build_prompt(self, batch: list[dict[str, Any]]) -> tuple[str, str]:
         group_hint = "\n".join(f"- {key}: {GROUP_LABELS[key]}" for key in GROUP_KEYS)
+        index_list = ", ".join(str(int(item["index"])) for item in batch if isinstance(item.get("index"), int))
         system_prompt = (
             "你是論文段落語義分類器。"
             "請依文字與排版線索，判斷每段應套用的格式群組。\n"
             "可用群組如下：\n"
             f"{group_hint}\n"
+            f"你必須為以下每個 index 都回傳一筆分類，不可遺漏：{index_list}。\n"
             "如果不確定，請回傳 body。"
             "你只能回傳 JSON，格式必須是："
             '{"labels":[{"index":12,"group":"body"}]}。'
@@ -141,6 +152,8 @@ class ParagraphAIClassifier:
                 {
                     "index": item["index"],
                     "text": item["text"][:240],
+                    "prev_text": item.get("prev_text", "")[:120],
+                    "next_text": item.get("next_text", "")[:120],
                     "heuristic": item.get("heuristic", "body"),
                     "style_name": item.get("style_name", ""),
                     "alignment": item.get("alignment", ""),
@@ -226,6 +239,32 @@ class ParagraphAIClassifier:
                 return [item for item in labels if isinstance(item, dict)]
         return []
 
+    def _collect_valid_labels(self, raw_text: str) -> dict[int, str]:
+        output: dict[int, str] = {}
+        for item in self._parse_labels(raw_text):
+            idx = item.get("index")
+            group = item.get("group")
+            if isinstance(idx, int) and group in GROUP_KEYS:
+                output[idx] = group
+        return output
+
+    def _retry_missing_labels(self, provider: str, batch: list[dict[str, Any]], missing_indices: list[int]) -> dict[int, str]:
+        if not missing_indices:
+            return {}
+
+        target_set = set(missing_indices)
+        missing_rows = [item for item in batch if int(item["index"]) in target_set and isinstance(item.get("index"), int)]
+        if not missing_rows:
+            return {}
+
+        system_prompt, user_prompt = self._build_prompt(missing_rows)
+        if provider == "openai":
+            raw_text = self._call_openai(system_prompt, user_prompt)
+        else:
+            raw_text = self._call_gemini(system_prompt, user_prompt)
+
+        return self._collect_valid_labels(raw_text)
+
     @staticmethod
     def _extract_json_payload(text: str) -> Any:
         stripped = text.strip()
@@ -271,6 +310,16 @@ class ParagraphAIClassifier:
             return f"{provider_name} 網路連線失敗，請確認網路與憑證設定。"
 
         return str(exc)
+
+    def _disabled_reason_note(self) -> str:
+        provider = (self.config.provider or "auto").lower()
+        if provider in {"off", "none", "disable", "disabled"}:
+            return "AI 判斷已關閉，使用規則判斷。"
+        if provider == "openai":
+            return "OpenAI API Key 未提供，使用規則判斷。"
+        if provider == "gemini":
+            return "Gemini API Key 未提供，使用規則判斷。"
+        return "未設定可用 AI API Key，使用規則判斷。"
 
     @staticmethod
     def _chunk(items: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:

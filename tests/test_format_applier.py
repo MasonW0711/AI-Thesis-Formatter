@@ -42,8 +42,8 @@ def test_format_apply_is_idempotent(tmp_path: Path):
     rules = RuleSet()
 
     applier = FormatApplier()
-    applier.apply(source, first, rules)
-    applier.apply(first, second, rules)
+    applier.apply(source, first, rules, ai_options={"provider": "off"})
+    applier.apply(first, second, rules, ai_options={"provider": "off"})
 
     first_snapshot, first_toc_count = _extract_snapshot(first)
     second_snapshot, second_toc_count = _extract_snapshot(second)
