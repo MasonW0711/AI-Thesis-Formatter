@@ -14,7 +14,7 @@
 
     <main>
         <section class="panel">
-            <h2>Step 1. 選擇或建立範本</h2>
+            <h2>步驟 1：選擇或建立範本</h2>
             <div class="grid two">
                 <div>
                     <label for="templateSelect">目前範本</label>
@@ -27,7 +27,7 @@
 
                 <form id="uploadTemplateForm" class="compact-form">
                     <label for="templateName">新範本名稱</label>
-                    <input id="templateName" name="name" placeholder="例如：NCHU Thesis 2026" />
+                    <input id="templateName" name="name" placeholder="例如：資工系論文格式 2026" />
                     <label for="templateFile">上傳 DOCX 範本</label>
                     <input id="templateFile" name="file" type="file" accept=".docx" required />
                     <button type="submit">上傳並偵測</button>
@@ -37,11 +37,11 @@
         </section>
 
         <section class="panel">
-            <h2>Step 2. 檢查與調整規則</h2>
-            <p class="hint">可在此調整頁面設定與各段落群組樣式，再送出處理任務。</p>
+            <h2>步驟 2：檢查與調整規則</h2>
+            <p class="hint">可在此調整頁面設定與各段落群組樣式；字型依規範固定為「標楷體」。</p>
             <form id="rulesForm">
                 <div id="pageRuleEditor" class="grid three"></div>
-                <h3>Paragraph Groups</h3>
+                <h3>段落規則群組（固定字型：標楷體）</h3>
                 <div id="groupRuleEditor" class="group-grid"></div>
                 <div class="row">
                     <button id="saveRulesBtn" type="submit">儲存規則到範本</button>
@@ -50,18 +50,18 @@
         </section>
 
         <section class="panel">
-            <h2>Step 3. 上傳目標論文並處理</h2>
+            <h2>步驟 3：上傳目標論文並處理</h2>
             <form id="createJobForm" class="compact-form">
                 <label for="targetFile">目標檔案（DOCX 或 PDF）</label>
                 <input id="targetFile" name="target_file" type="file" accept=".docx,.pdf" required />
                 <button type="submit">建立任務並套用格式</button>
             </form>
             <div id="jobStatus" class="status-box hidden">
-                <p><strong>Job ID:</strong> <span id="jobIdText">-</span></p>
-                <p><strong>Status:</strong> <span id="jobStateText">-</span></p>
-                <p><strong>Progress:</strong> <span id="jobProgressText">0</span>%</p>
-                <p><strong>Warning:</strong> <span id="jobWarningText">-</span></p>
-                <p><strong>Error:</strong> <span id="jobErrorText">-</span></p>
+                <p><strong>任務編號：</strong> <span id="jobIdText">-</span></p>
+                <p><strong>任務狀態：</strong> <span id="jobStateText">-</span></p>
+                <p><strong>處理進度：</strong> <span id="jobProgressText">0</span>%</p>
+                <p><strong>警示訊息：</strong> <span id="jobWarningText">-</span></p>
+                <p><strong>錯誤訊息：</strong> <span id="jobErrorText">-</span></p>
                 <a id="downloadLink" class="download hidden" href="#">下載格式化 DOCX</a>
             </div>
         </section>

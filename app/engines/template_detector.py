@@ -10,7 +10,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 
-from app.models.schemas import GROUP_KEYS, PageRule, ParagraphRule, RuleSet
+from app.models.schemas import GROUP_KEYS, GROUP_LABELS, REQUIRED_FONT_NAME, PageRule, ParagraphRule, RuleSet
 
 
 CHAPTER_RE = re.compile(r"^第[一二三四五六七八九十百千\d]+章")
@@ -40,7 +40,7 @@ class ParagraphSnapshot:
 
 
 class TemplateDetector:
-    """Detect formatting rules from a DOCX template."""
+    """從 DOCX 範本偵測版面與段落格式規則。"""
 
     def detect(self, template_path: Path, template_id: str | None = None, template_name: str = "") -> RuleSet:
         document = Document(str(template_path))
@@ -58,12 +58,12 @@ class TemplateDetector:
             group = self._classify(snapshot)
             grouped_samples[group].append(snapshot)
 
-        # Ensure every group has a fallback sample from body/front matter.
+        # 若未偵測到內文，使用保守預設值避免後續流程失敗。
         if not grouped_samples.get("body"):
             fallback = ParagraphSnapshot(
                 index=0,
                 text="",
-                font_name="Times New Roman",
+                font_name=REQUIRED_FONT_NAME,
                 font_size_pt=12,
                 bold=False,
                 italic=False,
@@ -75,13 +75,13 @@ class TemplateDetector:
                 is_numbered=False,
             )
             grouped_samples["body"].append(fallback)
-            notes.append("No body paragraphs detected; using default body rule.")
+            notes.append("未偵測到可用內文段落，系統已套用預設內文規則。")
 
         rules: dict[str, ParagraphRule] = {}
         for key in GROUP_KEYS:
             samples = grouped_samples.get(key) or grouped_samples.get("body")
             rules[key] = self._aggregate_rule(samples)
-            notes.append(f"{key}: {len(grouped_samples.get(key, []))} sample(s)")
+            notes.append(f"「{GROUP_LABELS[key]}」共偵測 {len(grouped_samples.get(key, []))} 筆樣本。")
 
         return RuleSet(
             template_id=template_id,
@@ -163,7 +163,7 @@ class TemplateDetector:
         return ParagraphSnapshot(
             index=index,
             text=paragraph.text.strip(),
-            font_name=font_name or "Times New Roman",
+            font_name=font_name or REQUIRED_FONT_NAME,
             font_size_pt=max(8.0, min(font_size_pt, 36.0)),
             bold=bold,
             italic=italic,
@@ -203,7 +203,8 @@ class TemplateDetector:
         return "body"
 
     def _aggregate_rule(self, samples: list[ParagraphSnapshot]) -> ParagraphRule:
-        font_name = self._mode([s.font_name for s in samples], default="Times New Roman")
+        # 依需求統一使用標楷體，不隨範本自動切換字型名稱。
+        font_name = REQUIRED_FONT_NAME
         alignment = self._mode([s.alignment for s in samples], default="justify")
 
         font_size = self._median([s.font_size_pt for s in samples], default=12.0)

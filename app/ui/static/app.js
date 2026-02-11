@@ -1,4 +1,6 @@
-﻿const templateSelect = document.getElementById("templateSelect");
+const REQUIRED_FONT_NAME = "\u6a19\u6977\u9ad4";
+
+const templateSelect = document.getElementById("templateSelect");
 const templateInfo = document.getElementById("templateInfo");
 const messageBox = document.getElementById("messageBox");
 const pageRuleEditor = document.getElementById("pageRuleEditor");
@@ -103,7 +105,7 @@ function createNumberInput(name, value, step = "0.1") {
   return wrapper;
 }
 
-function createTextInput(name, value) {
+function createTextInput(name, value, disabled = false) {
   const wrapper = document.createElement("label");
   wrapper.className = "field";
   wrapper.innerHTML = `<span>${name}</span>`;
@@ -112,6 +114,7 @@ function createTextInput(name, value) {
   input.type = "text";
   input.name = name;
   input.value = value;
+  input.disabled = disabled;
   wrapper.appendChild(input);
 
   return wrapper;
@@ -164,6 +167,7 @@ function renderRuleEditor() {
 
   for (const groupKey of GROUP_KEYS) {
     const rule = currentRules.groups[groupKey];
+    rule.font_name = REQUIRED_FONT_NAME;
 
     const card = document.createElement("div");
     card.className = "group-card";
@@ -172,7 +176,7 @@ function renderRuleEditor() {
     title.textContent = groupKey;
     card.appendChild(title);
 
-    card.appendChild(createTextInput(`${groupKey}.font_name`, rule.font_name));
+    card.appendChild(createTextInput(`${groupKey}.font_name`, REQUIRED_FONT_NAME, true));
     card.appendChild(createNumberInput(`${groupKey}.font_size_pt`, rule.font_size_pt));
     card.appendChild(createTextInput(`${groupKey}.alignment`, rule.alignment));
     card.appendChild(createNumberInput(`${groupKey}.line_spacing`, rule.line_spacing, "0.05"));
@@ -207,7 +211,6 @@ function collectRulesFromEditor() {
     const group = rules.groups[groupKey];
     if (!group) continue;
 
-    const fontName = rulesForm.elements.namedItem(`${groupKey}.font_name`);
     const fontSize = rulesForm.elements.namedItem(`${groupKey}.font_size_pt`);
     const alignment = rulesForm.elements.namedItem(`${groupKey}.alignment`);
     const lineSpacing = rulesForm.elements.namedItem(`${groupKey}.line_spacing`);
@@ -217,7 +220,7 @@ function collectRulesFromEditor() {
     const bold = rulesForm.elements.namedItem(`${groupKey}.bold`);
     const italic = rulesForm.elements.namedItem(`${groupKey}.italic`);
 
-    group.font_name = fontName.value;
+    group.font_name = REQUIRED_FONT_NAME;
     group.font_size_pt = Number(fontSize.value);
     group.alignment = alignment.value;
     group.line_spacing = Number(lineSpacing.value);

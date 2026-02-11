@@ -1,7 +1,6 @@
-﻿from pathlib import Path
-
-from app.core.config import settings
+﻿from app.core.config import settings
 from app.engines.template_detector import TemplateDetector
+from app.models.schemas import REQUIRED_FONT_NAME
 
 
 def test_detect_default_template_rules():
@@ -19,4 +18,5 @@ def test_detect_default_template_rules():
     assert "chapter_title" in rules.groups
     assert 8 <= rules.groups["body"].font_size_pt <= 18
     assert rules.groups["chapter_title"].bold is True
+    assert all(group.font_name == REQUIRED_FONT_NAME for group in rules.groups.values())
     assert len(rules.detection_notes) > 0

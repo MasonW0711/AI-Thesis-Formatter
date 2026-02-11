@@ -1,7 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
@@ -9,7 +10,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
-from app.models.schemas import ParagraphRule, RuleSet
+from app.adapters.ai_classifier import ParagraphAIClassifier
+from app.models.schemas import REQUIRED_FONT_NAME, ParagraphRule, RuleSet
 
 
 CHAPTER_RE = re.compile(r"^第[一二三四五六七八九十百千\d]+章")
@@ -23,14 +25,20 @@ KEYWORDS_RE = re.compile(r"^(關鍵詞|keywords)\s*[:：]", re.IGNORECASE)
 
 
 class FormatApplier:
-    """Apply detected rules to a target DOCX document."""
+    """套用頁面與段落格式，並可選擇使用 AI 強化段落語義分類。"""
 
-    def apply(self, source_docx: Path, output_docx: Path, ruleset: RuleSet) -> list[str]:
+    def apply(
+        self,
+        source_docx: Path,
+        output_docx: Path,
+        ruleset: RuleSet,
+        ai_options: dict[str, Any] | None = None,
+    ) -> list[str]:
         document = Document(str(source_docx))
         warnings: list[str] = []
 
         self._apply_page_rule(document, ruleset)
-        self._apply_paragraph_rules(document, ruleset)
+        self._apply_paragraph_rules(document, ruleset, warnings=warnings, ai_options=ai_options)
         self._ensure_index_pages(document, ruleset)
 
         document.save(str(output_docx))
@@ -64,17 +72,57 @@ class FormatApplier:
 
             self._ensure_footer_page_field(section)
 
-    def _apply_paragraph_rules(self, document: Document, ruleset: RuleSet) -> None:
+    def _apply_paragraph_rules(
+        self,
+        document: Document,
+        ruleset: RuleSet,
+        warnings: list[str],
+        ai_options: dict[str, Any] | None = None,
+    ) -> None:
         groups = ruleset.groups
+        rows: list[dict[str, Any]] = []
+        ai_inputs: list[dict[str, Any]] = []
 
         for idx, paragraph in enumerate(document.paragraphs):
             text = paragraph.text.strip()
             if not text:
                 continue
 
-            group = self._classify(idx, text, paragraph)
+            heuristic_group = self._classify(idx, text, paragraph)
+            locked_group = self._locked_group(text)
+            p_pr = paragraph._p.pPr
+            is_numbered = bool(p_pr is not None and p_pr.numPr is not None)
+
+            row = {
+                "index": idx,
+                "paragraph": paragraph,
+                "heuristic_group": heuristic_group,
+                "locked_group": locked_group,
+            }
+            rows.append(row)
+
+            if not locked_group:
+                ai_inputs.append(
+                    {
+                        "index": idx,
+                        "text": text,
+                        "heuristic": heuristic_group,
+                        "style_name": (paragraph.style.name if paragraph.style else "") or "",
+                        "alignment": self._alignment_key(paragraph.alignment),
+                        "is_numbered": is_numbered,
+                    }
+                )
+
+        ai_labels: dict[int, str] = {}
+        if ai_inputs:
+            classifier = ParagraphAIClassifier.from_overrides(ai_options)
+            ai_labels, ai_notes = classifier.classify(ai_inputs)
+            warnings.extend(ai_notes)
+
+        for row in rows:
+            group = row["locked_group"] or ai_labels.get(row["index"], row["heuristic_group"])
             rule = groups.get(group, groups["body"])
-            self._apply_rule_to_paragraph(paragraph, rule)
+            self._apply_rule_to_paragraph(row["paragraph"], rule)
 
     def _ensure_index_pages(self, document: Document, ruleset: RuleSet) -> None:
         if not document.paragraphs:
@@ -125,25 +173,23 @@ class FormatApplier:
         if not paragraph.runs:
             paragraph.add_run()
 
+        enforced_font_name = REQUIRED_FONT_NAME
         for run in paragraph.runs:
-            run.font.name = rule.font_name
+            run.font.name = enforced_font_name
             run.font.size = Pt(rule.font_size_pt)
             run.font.bold = rule.bold
             run.font.italic = rule.italic
 
             r_pr = run._element.get_or_add_rPr()
             r_fonts = r_pr.get_or_add_rFonts()
-            r_fonts.set(qn("w:eastAsia"), rule.font_name)
-            r_fonts.set(qn("w:ascii"), rule.font_name)
-            r_fonts.set(qn("w:hAnsi"), rule.font_name)
+            r_fonts.set(qn("w:eastAsia"), enforced_font_name)
+            r_fonts.set(qn("w:ascii"), enforced_font_name)
+            r_fonts.set(qn("w:hAnsi"), enforced_font_name)
 
     def _classify(self, index: int, text: str, paragraph) -> str:
-        if TOC_RE.match(text):
-            return "toc"
-        if FIGURE_RE.match(text):
-            return "figure_caption"
-        if TABLE_RE.match(text):
-            return "table_caption"
+        locked_group = self._locked_group(text)
+        if locked_group:
+            return locked_group
         if CHAPTER_RE.match(text):
             return "chapter_title"
         if SECTION_RE.match(text):
@@ -163,6 +209,26 @@ class FormatApplier:
             return "subsection_title"
 
         return "body"
+
+    @staticmethod
+    def _locked_group(text: str) -> str | None:
+        if TOC_RE.match(text):
+            return "toc"
+        if FIGURE_RE.match(text):
+            return "figure_caption"
+        if TABLE_RE.match(text):
+            return "table_caption"
+        return None
+
+    @staticmethod
+    def _alignment_key(alignment) -> str:
+        if alignment == WD_ALIGN_PARAGRAPH.CENTER:
+            return "center"
+        if alignment == WD_ALIGN_PARAGRAPH.RIGHT:
+            return "right"
+        if alignment in {WD_ALIGN_PARAGRAPH.JUSTIFY, WD_ALIGN_PARAGRAPH.DISTRIBUTE}:
+            return "justify"
+        return "left"
 
     @staticmethod
     def _to_alignment(alignment: str):
@@ -218,7 +284,7 @@ class FormatApplier:
         fld_char_sep.set(qn("w:fldCharType"), "separate")
         run_separate._r.append(fld_char_sep)
 
-        run_text = paragraph.add_run("1")
+        paragraph.add_run("1")
         run_end = paragraph.add_run()
         fld_char_end = OxmlElement("w:fldChar")
         fld_char_end.set(qn("w:fldCharType"), "end")

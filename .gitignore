@@ -8,6 +8,7 @@ node_modules/
 dist/
 build/
 .pytest_cache/
+.pytest_tmp/
 .mypy_cache/
 data/
 *.spec

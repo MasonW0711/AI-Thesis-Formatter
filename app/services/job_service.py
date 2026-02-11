@@ -1,9 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import shutil
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -30,7 +31,7 @@ class JobService:
     ) -> JobRecord:
         suffix = Path(file.filename or "target.docx").suffix.lower()
         if suffix not in {".docx", ".pdf"}:
-            raise HTTPException(status_code=400, detail="Target file must be DOCX or PDF.")
+            raise HTTPException(status_code=400, detail="目標論文僅支援 DOCX 或 PDF 檔案。")
 
         file_id = str(uuid.uuid4())
         stored_name = f"target_{file_id}{suffix}"
@@ -57,10 +58,10 @@ class JobService:
     def get_job(self, session: Session, job_id: str) -> JobRecord:
         record = session.get(JobRecord, job_id)
         if not record:
-            raise HTTPException(status_code=404, detail="Job not found.")
+            raise HTTPException(status_code=404, detail="找不到指定任務。")
         return record
 
-    def process_job(self, job_id: str) -> None:
+    def process_job(self, job_id: str, ai_options: dict[str, Any] | None = None) -> None:
         with session_scope() as session:
             job = session.get(JobRecord, job_id)
             if not job:
@@ -70,7 +71,7 @@ class JobService:
             if not template:
                 job.status = JobStatus.FAILED.value
                 job.progress = 100
-                job.error_message = "Template not found."
+                job.error_message = "找不到對應的格式範本。"
                 return
 
             try:
@@ -98,7 +99,18 @@ class JobService:
                     session.flush()
 
                 output_path = settings.outputs_dir / f"formatted_{job.id}.docx"
-                self.format_applier.apply(source_docx_path, output_path, rules)
+                warnings = self.format_applier.apply(
+                    source_docx_path,
+                    output_path,
+                    rules,
+                    ai_options=ai_options,
+                )
+                if warnings:
+                    combined = "；".join(warnings)
+                    if job.warning_message:
+                        job.warning_message = f"{job.warning_message}；{combined}"
+                    else:
+                        job.warning_message = combined
 
                 job.output_docx_path = str(output_path)
                 job.progress = 100

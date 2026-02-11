@@ -13,6 +13,13 @@ class Settings:
     port: int
     debug: bool
     max_upload_size_mb: int
+    ai_provider: str
+    openai_api_key: str
+    openai_model: str
+    gemini_api_key: str
+    gemini_model: str
+    ai_timeout_sec: float
+    ai_batch_size: int
     base_dir: Path
     data_dir: Path
     templates_dir: Path
@@ -45,6 +52,13 @@ def build_settings() -> Settings:
         port=int(os.getenv("THESIS_APP_PORT", "8765")),
         debug=os.getenv("THESIS_APP_DEBUG", "false").lower() in {"1", "true", "yes"},
         max_upload_size_mb=int(os.getenv("THESIS_MAX_UPLOAD_MB", "50")),
+        ai_provider=os.getenv("THESIS_AI_PROVIDER", "auto").strip().lower(),
+        openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip(),
+        gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash").strip(),
+        ai_timeout_sec=float(os.getenv("THESIS_AI_TIMEOUT_SEC", "30")),
+        ai_batch_size=max(1, int(os.getenv("THESIS_AI_BATCH_SIZE", "20"))),
         base_dir=base_dir,
         data_dir=data_dir,
         templates_dir=templates_dir,

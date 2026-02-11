@@ -35,7 +35,7 @@ def create_app() -> FastAPI:
     async def limit_upload_size(request: Request, call_next):
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > settings.max_upload_size_mb * 1024 * 1024 + 1024 * 1024:
-            return JSONResponse(status_code=413, content={"detail": "Payload too large."})
+            return JSONResponse(status_code=413, content={"detail": "上傳內容過大，請縮小檔案後再試。"})
         return await call_next(request)
 
     @app.on_event("startup")
@@ -46,7 +46,7 @@ def create_app() -> FastAPI:
         with SessionLocal() as session:
             has_default = session.query(TemplateRecord).filter(TemplateRecord.is_default.is_(True)).first()
             if not has_default:
-                logger.info("No default template found; resetting default template.")
+                logger.info("找不到預設範本，系統將自動重建預設範本。")
                 TemplateService().reset_default_template(session)
 
     app.mount(
@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled exception: %s", exc)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+        return JSONResponse(status_code=500, content={"detail": "系統發生未預期錯誤，請稍後重試。"})
 
     return app
 

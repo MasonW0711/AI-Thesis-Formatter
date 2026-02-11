@@ -3,7 +3,7 @@
 from docx import Document
 
 from app.engines.format_applier import FormatApplier
-from app.models.schemas import RuleSet
+from app.models.schemas import REQUIRED_FONT_NAME, RuleSet
 
 
 def _build_sample_docx(path: Path) -> None:
@@ -17,16 +17,17 @@ def _build_sample_docx(path: Path) -> None:
     doc.save(path)
 
 
-def _extract_snapshot(path: Path) -> tuple[list[tuple[str, float | None, bool | None]], int]:
+def _extract_snapshot(path: Path) -> tuple[list[tuple[str, str | None, float | None, bool | None]], int]:
     doc = Document(path)
     rows = []
     for p in doc.paragraphs:
         if not p.text.strip():
             continue
         run = p.runs[0] if p.runs else None
+        font_name = run.font.name if run else None
         size = run.font.size.pt if run and run.font.size else None
         bold = run.font.bold if run else None
-        rows.append((p.text.strip(), size, bold))
+        rows.append((p.text.strip(), font_name, size, bold))
 
     toc_count = sum(1 for p in doc.paragraphs if p.text.strip() == "目錄")
     return rows, toc_count
@@ -50,3 +51,4 @@ def test_format_apply_is_idempotent(tmp_path: Path):
     assert first_snapshot == second_snapshot
     assert first_toc_count == 1
     assert second_toc_count == 1
+    assert all(row[1] == REQUIRED_FONT_NAME for row in second_snapshot)
