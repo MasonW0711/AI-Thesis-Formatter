@@ -1,7 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +14,16 @@ from app.models.schemas import GROUP_KEYS, GROUP_LABELS
 
 _OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+# Reusable httpx client with connection pooling (shared across calls)
+_http_client: httpx.Client | None = None
+
+
+def _get_http_client(timeout_sec: float) -> httpx.Client:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.Client(timeout=timeout_sec)
+    return _http_client
 
 
 @dataclass(frozen=True)
@@ -89,6 +100,47 @@ class ParagraphAIClassifier:
         notes: list[str] = []
         for batch in self._chunk(paragraphs, self.config.batch_size):
             system_prompt, user_prompt = self._build_prompt(batch)
+            batch_labels, batch_note = self._call_with_retry(provider, system_prompt, user_prompt, batch)
+            if batch_labels is None:
+                provider_name = self._provider_display(provider)
+                notes.append(f"AI 分類失敗，已回退規則判斷：{batch_note}")
+                return {}, notes
+            labels.update(batch_labels)
+
+            expected_indices = {int(item["index"]) for item in batch if isinstance(item.get("index"), int)}
+            missing_indices = expected_indices - set(batch_labels.keys())
+            if missing_indices:
+                retry_labels = self._retry_missing_labels(provider, batch, sorted(missing_indices))
+                labels.update(retry_labels)
+                missing_indices = expected_indices - set(labels.keys())
+                if missing_indices:
+                    notes.append(f"AI 未完整回傳分類，{len(missing_indices)} 段改用規則判斷。")
+
+        notes.append(f"已啟用 AI 語義判斷（{self._provider_display(provider)}）。")
+        notes.append(f"AI 判讀完成 {len(labels)}/{len(paragraphs)} 段。")
+        return labels, notes
+
+    def _call_with_retry(
+        self,
+        provider: str,
+        system_prompt: str,
+        user_prompt: str,
+        batch: list[dict[str, Any]],
+    ) -> tuple[dict[int, str] | None, str]:
+        """
+        呼叫 AI 並自自動 retry。
+
+        Retry 條件：
+        - HTTP 429（速率限制）：等 30s / 60s / 120s
+        - HTTP 500/502/503/504（伺服器錯誤）：等 5s / 10s / 20s
+        - Timeout：等 3s / 6s / 12s
+
+        超過 max_retries 次數後放棄，回傳 (None, 錯誤原因)。
+        """
+        max_retries = 3
+        last_error = ""
+
+        for attempt in range(max_retries):
             try:
                 if provider == "openai":
                     raw_text = self._call_openai(system_prompt, user_prompt)
@@ -96,25 +148,33 @@ class ParagraphAIClassifier:
                     raw_text = self._call_gemini(system_prompt, user_prompt)
 
                 batch_labels = self._collect_valid_labels(raw_text)
-                labels.update(batch_labels)
+                if batch_labels:
+                    return batch_labels, ""
 
-                expected_indices = {int(item["index"]) for item in batch if isinstance(item.get("index"), int)}
-                missing_indices = expected_indices - set(batch_labels.keys())
-                if missing_indices:
-                    retry_labels = self._retry_missing_labels(provider, batch, sorted(missing_indices))
-                    labels.update(retry_labels)
-                    missing_indices = expected_indices - set(labels.keys())
-                    if missing_indices:
-                        notes.append(f"AI 未完整回傳分類，{len(missing_indices)} 段改用規則判斷。")
-            except Exception as exc:  # pragma: no cover - network defensive branch
-                provider_name = self._provider_display(provider)
-                reason = self._friendly_error_message(provider_name, exc)
-                notes.append(f"AI 分類失敗，已回退規則判斷：{reason}")
-                return {}, notes
+                # AI 回傳空，嘗試 retry
+                last_error = "AI 回傳為空"
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                last_error = f"HTTP {status}"
+                if status == 429:
+                    wait = 30 * (2 ** attempt)
+                    time.sleep(wait)
+                    continue
+                if status >= 500:
+                    wait = 5 * (2 ** attempt)
+                    time.sleep(wait)
+                    continue
+                # 4xx 非 retryable
+                return None, self._friendly_error_message(self._provider_display(provider), exc)
+            except httpx.TimeoutException:
+                last_error = "請求逾時"
+                wait = 3 * (2 ** attempt)
+                time.sleep(wait)
+                continue
+            except Exception as exc:
+                return None, self._friendly_error_message(self._provider_display(provider), exc)
 
-        notes.append(f"已啟用 AI 語義判斷（{self._provider_display(provider)}）。")
-        notes.append(f"AI 判讀完成 {len(labels)}/{len(paragraphs)} 段。")
-        return labels, notes
+        return None, f"已重試 {max_retries} 次仍失敗：{last_error}"
 
     def _resolve_provider(self) -> str | None:
         provider = (self.config.provider or "auto").lower()
@@ -178,10 +238,10 @@ class ParagraphAIClassifier:
                 {"role": "user", "content": user_prompt},
             ],
         }
-        with httpx.Client(timeout=self.config.timeout_sec) as client:
-            response = client.post(_OPENAI_URL, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        client = _get_http_client(self.config.timeout_sec)
+        response = client.post(_OPENAI_URL, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
 
         choices = data.get("choices") or []
         if not choices:
@@ -214,10 +274,10 @@ class ParagraphAIClassifier:
             },
         }
         url = _GEMINI_URL.format(model=self.config.gemini_model)
-        with httpx.Client(timeout=self.config.timeout_sec) as client:
-            response = client.post(url, params={"key": self.config.gemini_api_key}, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        client = _get_http_client(self.config.timeout_sec)
+        response = client.post(url, params={"key": self.config.gemini_api_key}, json=payload)
+        response.raise_for_status()
+        data = response.json()
 
         candidates = data.get("candidates") or []
         if not candidates:

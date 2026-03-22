@@ -100,3 +100,28 @@ def test_ai_classifier_retries_missing_labels(monkeypatch):
     assert labels == {0: "chapter_title", 1: "body"}
     assert call_count["n"] == 2
     assert any("AI 判讀完成 2/2 段" in note for note in notes)
+
+
+def test_classifier_retry_on_429(monkeypatch):
+    """AI classifier should retry on HTTP 429 with exponential backoff."""
+    classifier = _build_classifier(provider="openai")
+    attempts = []
+
+    def _fake_openai_retry(system: str, user: str) -> str:
+        attempts.append(1)
+        if len(attempts) < 3:
+            # Simulate 429 on first 2 attempts
+            raise httpx.HTTPStatusError(
+                "rate limited",
+                request=httpx.Request("POST", "https://api.openai.com/"),
+                response=httpx.Response(429),
+            )
+        return '{"labels":[{"index":0,"group":"body"}]}'
+
+    monkeypatch.setattr(classifier, "_call_openai", _fake_openai_retry)
+
+    labels, notes = classifier.classify([{"index": 0, "text": "測試段落", "heuristic": "body", "style_name": "", "alignment": "justify", "is_numbered": False}])
+
+    # Should have retried and eventually succeeded
+    assert len(attempts) == 3
+    assert labels == {0: "body"}

@@ -1,11 +1,13 @@
 ﻿from __future__ import annotations
 
 import logging
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api import jobs_router, templates_router, ui_router
 from app.core.config import ensure_directories, settings
@@ -25,9 +27,14 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[
+            "http://localhost:3000",
+            "http://localhost:8501",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:8501",
+        ],
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
@@ -59,10 +66,25 @@ def create_app() -> FastAPI:
     app.include_router(templates_router)
     app.include_router(jobs_router)
 
+    @app.middleware("http")
+    async def add_request_id(request: Request, call_next):
+        request_id = str(uuid.uuid4())[:8]
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        logger.exception("Unhandled exception: %s", exc)
-        return JSONResponse(status_code=500, content={"detail": "系統發生未預期錯誤，請稍後重試。"})
+        request_id = getattr(request.state, "request_id", "?")
+        logger.exception("Unhandled exception [%s]: %s", request_id, exc)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "系統發生未預期錯誤，請稍後重試。",
+                "request_id": request_id,
+            },
+        )
 
     return app
 

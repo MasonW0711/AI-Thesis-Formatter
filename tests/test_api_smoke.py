@@ -53,3 +53,40 @@ def test_api_end_to_end(client, tmp_path: Path):
     download_resp = client.get(final_payload["download_url"])
     assert download_resp.status_code == 200
     assert len(download_resp.content) > 0
+
+
+def test_job_error_sanitization():
+    """Error messages should not expose internal paths or API keys."""
+    import sys
+    from pathlib import Path
+
+    ROOT = Path(__file__).resolve().parents[1]
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+
+    from app.services.job_service import _sanitize_error
+
+    test_cases = [
+        (
+            "/private/var/data/app.db - OpenAI API key: sk-abc123xyz",
+            "sk-abc123xyz",
+        ),
+        (
+            "Error: /Users/user/data/template.docx with THESIS_APP_DEBUG=true",
+            "THESIS_APP_DEBUG",
+        ),
+        (
+            "AIzaSyBMINoNa2nEAbkjoBZzj4_lI1YPiG1iW90",
+            "AIzaSyBMINoNa2nEAbkjoBZzj4_lI1YPiG1iW90",
+        ),
+        (
+            "ghp_abcdefghijk1234567890abcdefghijk",
+            "ghp_abcdefghijk1234567890abcdefghijk",
+        ),
+    ]
+
+    for raw, sensitive in test_cases:
+        sanitized = _sanitize_error(raw)
+        assert sensitive not in sanitized, f"Failed to sanitize: {raw}"
+        assert "[路徑]" not in sanitized or "/private" not in sanitized
+        assert "[API_KEY]" not in sanitized or "sk-" not in sanitized

@@ -14,6 +14,11 @@ engine = create_engine(
     connect_args={"check_same_thread": False},
     future=True,
 )
+# Enable WAL mode for better concurrent read performance
+with engine.connect() as conn:
+    from sqlalchemy import text
+    conn.execute(text("PRAGMA journal_mode=WAL"))
+    conn.commit()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False, class_=Session)
 Base = declarative_base()
 
