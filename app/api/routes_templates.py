@@ -12,19 +12,30 @@ templates_router = APIRouter(prefix="/api/templates", tags=["templates"])
 template_service = TemplateService()
 
 
-@templates_router.get("", response_model=list[TemplateSummary])
-def list_templates(db: Session = Depends(get_db_session)) -> list[TemplateSummary]:
-    records = template_service.list_templates(db)
-    return [
-        TemplateSummary(
-            id=t.id,
-            name=t.name,
-            source_filename=t.source_filename,
-            is_default=t.is_default,
-            created_at=t.created_at.isoformat(),
-        )
-        for t in records
-    ]
+@templates_router.get("")
+@limiter.limit("30/minute")
+def list_templates(
+    db: Session = Depends(get_db_session),
+    skip: int = 0,
+    limit: int = 50,
+) -> dict:
+    """List templates with pagination. Returns {items, total, skip, limit}."""
+    records, total = template_service.list_templates_paginated(db, skip=skip, limit=limit)
+    return {
+        "items": [
+            TemplateSummary(
+                id=t.id,
+                name=t.name,
+                source_filename=t.source_filename,
+                is_default=t.is_default,
+                created_at=t.created_at.isoformat(),
+            )
+            for t in records
+        ],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 @templates_router.post("/default/reset", response_model=TemplateRulesResponse)

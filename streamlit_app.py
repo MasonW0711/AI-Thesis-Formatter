@@ -94,9 +94,11 @@ def save_rules_to_template(template_service: TemplateService, template_id: str, 
 
 
 def _read_streamlit_secret(key: str) -> str:
+    """Read a Streamlit secret, logging a warning if missing or inaccessible."""
     try:
         value = st.secrets.get(key, "")
-    except Exception:
+    except Exception as exc:
+        st.warning(f"Streamlit secrets 未完整設定或缺少「{key}」，將使用環境變數或預設值。細節：{exc}")
         return ""
     return str(value or "").strip()
 

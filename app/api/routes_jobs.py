@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -12,6 +13,7 @@ from app.models.db_models import JobStatus
 from app.models.schemas import JobCreateResponse, JobStatusResponse, RuleSet
 from app.services.job_service import JobService
 from app.services.template_service import TemplateService
+from app.core.limiter import limiter
 
 
 jobs_router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -19,30 +21,38 @@ job_service = JobService()
 template_service = TemplateService()
 
 
-def _upload_size(upload: UploadFile) -> int:
-    position = upload.file.tell()
-    upload.file.seek(0, 2)
-    size = upload.file.tell()
-    upload.file.seek(position)
+def _upload_size(upload: UploadFile, limit_bytes: int) -> int:
+    """Stream-read file in chunks, check size limit without buffering entire file in RAM."""
+    size = 0
+    upload.file.seek(0)  # Rewind to start if already read
+    while True:
+        chunk = upload.file.read(1024 * 1024)  # 1 MB at a time
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > limit_bytes:
+            upload.file.seek(0)
+            raise HTTPException(
+                status_code=413,
+                detail=f"檔案大小超過 {settings.max_upload_size_mb} MB 上限。",
+            )
+    upload.file.seek(0)  # Rewind so caller can read again
     return size
 
 
 @jobs_router.post("", response_model=JobCreateResponse)
+@limiter.limit("10/minute")
 def create_job(
     background_tasks: BackgroundTasks,
     template_id: str = Form(...),
     target_file: UploadFile = File(...),
     rules_override: str | None = Form(default=None),
     ai_provider: str | None = Form(default=None),
-    openai_api_key: str | None = Form(default=None),
     openai_model: str | None = Form(default=None),
-    gemini_api_key: str | None = Form(default=None),
     gemini_model: str | None = Form(default=None),
     db: Session = Depends(get_db_session),
 ) -> JobCreateResponse:
-    size_bytes = _upload_size(target_file)
-    if size_bytes > settings.max_upload_size_mb * 1024 * 1024:
-        raise HTTPException(status_code=400, detail=f"檔案大小超過 {settings.max_upload_size_mb} MB 上限。")
+    size_bytes = _upload_size(target_file, settings.max_upload_size_mb * 1024 * 1024)
 
     template = template_service.get_template(db, template_id)
 
@@ -54,11 +64,11 @@ def create_job(
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"規則資料格式錯誤：{exc}") from exc
 
+    # AI credentials: only from system settings (secrets / config).
+    # NEVER accept openai_api_key / gemini_api_key from user Form data.
     ai_options = {
         "provider": (ai_provider or "").strip().lower() or None,
-        "openai_api_key": (openai_api_key or "").strip() or None,
         "openai_model": (openai_model or "").strip() or None,
-        "gemini_api_key": (gemini_api_key or "").strip() or None,
         "gemini_model": (gemini_model or "").strip() or None,
     }
     ai_options = {key: value for key, value in ai_options.items() if value is not None}
@@ -91,12 +101,19 @@ def get_job_status(job_id: str, db: Session = Depends(get_db_session)) -> JobSta
 
 
 @jobs_router.get("/{job_id}/download")
+@limiter.limit("30/minute")
 def download_job_output(job_id: str, db: Session = Depends(get_db_session)) -> FileResponse:
     job = job_service.get_job(db, job_id)
     if job.status != JobStatus.SUCCESS.value or not job.output_docx_path:
         raise HTTPException(status_code=400, detail="任務尚未完成，暫時無法下載檔案。")
 
-    output_path = job.output_docx_path
+    output_path = Path(job.output_docx_path).resolve()
+    allowed_dir = settings.outputs_dir.resolve()
+
+    # Prevent path traversal: ensure resolved path is under outputs_dir
+    if not output_path.is_relative_to(allowed_dir):
+        raise HTTPException(status_code=403, detail="無效的檔案路徑。")
+
     return FileResponse(
         output_path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

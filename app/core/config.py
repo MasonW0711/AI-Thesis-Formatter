@@ -30,6 +30,7 @@ class Settings:
     database_url: str
     defaults_dir: Path
     default_template_source: Path
+    api_auth_key: str | None
 
 
 def build_settings() -> Settings:
@@ -69,6 +70,7 @@ def build_settings() -> Settings:
         database_url=f"sqlite:///{database_path.as_posix()}",
         defaults_dir=defaults_dir,
         default_template_source=default_template_source,
+        api_auth_key=os.getenv("API_AUTH_KEY", "").strip() or None,
     )
 
 

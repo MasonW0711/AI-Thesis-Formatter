@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
@@ -44,9 +44,36 @@ def _sanitize_error(message: str) -> str:
 
 
 class JobService:
+    # Jobs running longer than this are considered stale (process died mid-job)
+    STALE_JOB_TIMEOUT_SEC = 3600  # 1 hour
+
     def __init__(self) -> None:
         self.pdf_adapter = PdfToDocxAdapter()
         self.format_applier = FormatApplier()
+
+    def recover_stale_jobs(self, session: Session) -> int:
+        """
+        Reset any job stuck in RUNNING state (process died mid-job).
+        Returns number of jobs recovered.
+        """
+        from datetime import datetime, timedelta, timezone
+        from app.models.db_models import JobStatus
+
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=self.STALE_JOB_TIMEOUT_SEC)
+        stale = (
+            session.query(JobRecord)
+            .filter(
+                JobRecord.status == JobStatus.RUNNING.value,
+                JobRecord.updated_at < threshold,
+            )
+            .all()
+        )
+        for job in stale:
+            job.status = JobStatus.QUEUED.value
+            job.progress = 0
+            job.error_message = "任務處理超時，已自動重置。請重新嘗試。"
+        session.commit()
+        return len(stale)
 
     def create_job(
         self,

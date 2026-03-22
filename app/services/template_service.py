@@ -21,6 +21,20 @@ class TemplateService:
     def list_templates(self, session: Session) -> list[TemplateRecord]:
         return session.query(TemplateRecord).order_by(TemplateRecord.created_at.desc()).all()
 
+    def list_templates_paginated(
+        self, session: Session, skip: int = 0, limit: int = 50
+    ) -> tuple[list[TemplateRecord], int]:
+        """Return (records, total_count) with pagination."""
+        total = session.query(TemplateRecord).count()
+        records = (
+            session.query(TemplateRecord)
+            .order_by(TemplateRecord.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return records, total
+
     def get_template(self, session: Session, template_id: str) -> TemplateRecord:
         template = session.get(TemplateRecord, template_id)
         if not template:

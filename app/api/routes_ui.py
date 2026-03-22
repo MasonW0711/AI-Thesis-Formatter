@@ -6,6 +6,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from sqlalchemy import text
+
 from app.core.database import get_db_session
 from app.models.db_models import TemplateRecord
 
@@ -43,5 +45,22 @@ def index(request: Request, db: Session = Depends(get_db_session)) -> HTMLRespon
 
 
 @ui_router.get("/health")
-def health() -> JSONResponse:
-    return JSONResponse({"status": "ok", "app": settings.app_name, "version": settings.app_version})
+def health(db: Session = Depends(get_db_session)) -> JSONResponse:
+    """Health check including database connectivity."""
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "app": settings.app_name,
+                "version": settings.app_version,
+                "error": "Database connection failed",
+            },
+        )
+    return JSONResponse({
+        "status": "ok",
+        "app": settings.app_name,
+        "version": settings.app_version,
+    })
