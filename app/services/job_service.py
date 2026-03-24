@@ -71,7 +71,7 @@ class JobService:
         for job in stale:
             job.status = JobStatus.QUEUED.value
             job.progress = 0
-            job.error_message = "任務處理超時，已自動重置。請重新嘗試。"
+            job.error_message = "任務處理超時，已自動重置。請重新嘁試。"
         session.commit()
         return len(stale)
 

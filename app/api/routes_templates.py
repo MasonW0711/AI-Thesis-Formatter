@@ -13,7 +13,6 @@ template_service = TemplateService()
 
 
 @templates_router.get("")
-@limiter.limit("30/minute")
 def list_templates(
     db: Session = Depends(get_db_session),
     skip: int = 0,
