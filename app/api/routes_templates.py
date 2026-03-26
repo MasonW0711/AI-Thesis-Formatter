@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.csrf import CSRFDependency
 from app.core.database import get_db_session
 from app.models.schemas import ApiMessage, RuleSet, TemplateRulesResponse, TemplateSummary
 from app.services.template_service import TemplateService
@@ -37,6 +38,7 @@ def list_templates(
     }
 
 
+@CSRFDependency(methods=["POST"])
 @templates_router.post("/default/reset", response_model=TemplateRulesResponse)
 def reset_default_template(db: Session = Depends(get_db_session)) -> TemplateRulesResponse:
     record = template_service.reset_default_template(db)
@@ -50,6 +52,7 @@ def reset_default_template(db: Session = Depends(get_db_session)) -> TemplateRul
     )
 
 
+@CSRFDependency(methods=["POST"])
 @templates_router.post("/upload", response_model=TemplateRulesResponse)
 def upload_template(
     file: UploadFile = File(...),
@@ -80,6 +83,7 @@ def get_template_rules(template_id: str, db: Session = Depends(get_db_session)) 
     )
 
 
+@CSRFDependency(methods=["PATCH"])
 @templates_router.patch("/{template_id}/rules", response_model=TemplateRulesResponse)
 def update_template_rules(template_id: str, rules: RuleSet, db: Session = Depends(get_db_session)) -> TemplateRulesResponse:
     record = template_service.get_template(db, template_id)

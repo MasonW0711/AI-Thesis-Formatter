@@ -149,7 +149,7 @@ class JobService:
                     job.working_docx_path = str(intermediate_docx)
                     job.conversion_confidence = conversion.confidence
                     if conversion.warning_message:
-                        job.warning_message = conversion.warning_message
+                        job.warning_message = _sanitize_error(conversion.warning_message or "")
                     job.progress = 40
                     session.flush()
 
@@ -161,7 +161,7 @@ class JobService:
                     ai_options=ai_options,
                 )
                 if warnings:
-                    combined = "；".join(warnings)
+                    combined = "；".join(_sanitize_error(w) for w in warnings)
                     if job.warning_message:
                         job.warning_message = f"{job.warning_message}；{combined}"
                     else:
@@ -172,6 +172,10 @@ class JobService:
                 job.status = JobStatus.SUCCESS.value
                 job.error_message = None
                 session.flush()
+
+                # 成功後刪除 input file（Spec: 資料生命週期，處理完成後自動刪除原始檔案）
+                self._cleanup_job_files(job, keep_output=True)
+
             except Exception as exc:  # pragma: no cover - defensive branch
                 job.status = JobStatus.FAILED.value
                 job.progress = 100
@@ -186,13 +190,16 @@ class JobService:
             except OSError:
                 pass
 
-    def _cleanup_job_files(self, job: JobRecord) -> None:
-        """清除 Job 的上傳檔案與產出檔案。"""
-        paths = [
-            job.target_file_path,
-            job.working_docx_path,
-            job.output_docx_path,
-        ]
+    def _cleanup_job_files(self, job: JobRecord, keep_output: bool = False) -> None:
+        """清除 Job 的上傳檔案與產出檔案。
+
+        Args:
+            job: Job record
+            keep_output: True 則保留 output_docx_path（使用者還需要下載）
+        """
+        paths = [job.target_file_path, job.working_docx_path]
+        if not keep_output:
+            paths.append(job.output_docx_path)
         for p in paths:
             if p:
                 try:
