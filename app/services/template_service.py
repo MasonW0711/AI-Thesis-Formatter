@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import shutil
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.engines.template_detector import TemplateDetector
 from app.models.db_models import TemplateRecord
+from app.services.job_service import _sanitize_filename
 from app.models.schemas import RuleSet
 
 
@@ -101,7 +102,7 @@ class TemplateService:
         record = TemplateRecord(
             id=template_id,
             name=template_name,
-            source_filename=file.filename or filename,
+            source_filename=_sanitize_filename(file.filename or filename),
             file_path=str(file_path),
             rules_json=json.dumps(detected.model_dump(), ensure_ascii=False),
             is_default=False,

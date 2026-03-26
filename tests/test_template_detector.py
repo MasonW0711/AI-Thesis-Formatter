@@ -1,4 +1,4 @@
-﻿from app.core.config import settings
+from app.core.config import settings
 from app.engines.template_detector import TemplateDetector
 from app.models.schemas import REQUIRED_FONT_NAME
 

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import re
@@ -51,6 +51,14 @@ class JobService:
         self.pdf_adapter = PdfToDocxAdapter()
         self.format_applier = FormatApplier()
 
+    def delete_job(self, session: Session, job_id: str) -> None:
+        """Delete a job and all its associated files from disk."""
+        job = session.get(JobRecord, job_id)
+        if job:
+            self._cleanup_job_files(job)
+            session.query(JobRecord).filter(JobRecord.id == job_id).delete()
+            session.commit()
+
     def recover_stale_jobs(self, session: Session) -> int:
         """
         Reset any job stuck in RUNNING state (process died mid-job).
@@ -71,7 +79,7 @@ class JobService:
         for job in stale:
             job.status = JobStatus.QUEUED.value
             job.progress = 0
-            job.error_message = "任務處理超時，已自動重置。請重新嘁試。"
+            job.error_message = "任務處理超時，已自動重置。請重新嘗試。"
         session.commit()
         return len(stale)
 
