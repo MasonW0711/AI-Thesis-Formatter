@@ -12,3 +12,5 @@ build/
 .mypy_cache/
 data/
 *.spec
+.streamlit/secrets.toml
+streamlit/
